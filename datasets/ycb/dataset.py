@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import argparse
 import time
 import random
-from lib.transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix
+from transformations import quaternion_from_euler, euler_matrix, random_quaternion, quaternion_matrix
 import numpy.ma as ma
 import copy
 import scipy.misc
