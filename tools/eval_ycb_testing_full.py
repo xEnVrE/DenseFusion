@@ -134,7 +134,7 @@ while 1:
     cld[class_id] = np.array(cld[class_id])
     class_id += 1
 
-# for now in range(0, 20739):
+# for now in range(0, 20738):
 for now in range(0, 2949):
     img = Image.open('{0}/{1}-color.png'.format(opt.dataset_root, testlist[now]))
     depth = np.array(Image.open('{0}/{1}-depth.png'.format(opt.dataset_root, testlist[now])))
