@@ -160,7 +160,11 @@ for now in range(0, 2949):
                 np.random.shuffle(c_mask)
                 choose = choose[c_mask.nonzero()]
             else:
-                choose = np.pad(choose, (0, num_points - len(choose)), 'wrap')
+                if len(choose) != 0:
+                    choose = np.pad(choose, (0, num_points - len(choose)), 'wrap')
+                else:
+                    print ("PoseCNN roi not containing valid mask points")
+                    continue
 
             depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
             xmap_masked = xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
