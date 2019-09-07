@@ -4,6 +4,7 @@ import os
 import copy
 import random
 import numpy as np
+import quaternion
 from PIL import Image
 import scipy.io as scio
 import scipy.misc
@@ -22,7 +23,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from datasets.ycb.dataset import PoseDataset
 from lib.network import PoseNet, PoseRefineNet
-from transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix
+from transformations import euler_matrix, quaternion_matrix, quaternion_from_matrix, unit_vector
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset_root', type=str, default = '', help='dataset root dir')
@@ -50,6 +51,7 @@ dataset_config_dir = 'datasets/ycb/dataset_config'
 ycb_toolbox_dir = 'YCB_Video_toolbox'
 result_wo_refine_dir = 'experiments/eval_result/ycb/Densefusion_wo_refine_result'
 result_refine_dir = 'experiments/eval_result/ycb/Densefusion_iterative_result'
+invalid_result_placeholder = '{:s}'.format(' '.join(['{:.1f}'.format(0.0) for i in range(13)]))
 
 def get_bbox(posecnn_rois):
     rmin = int(posecnn_rois[idx][3]) + 1
@@ -100,8 +102,8 @@ refiner.load_state_dict(torch.load(opt.refine_model))
 refiner.eval()
 
 testlist = []
-# input_file = open('{0}/fulltest_data_list.txt'.format(dataset_config_dir))
-input_file = open('{0}/test_data_list.txt'.format(dataset_config_dir))
+input_file = open('{0}/fulltest_data_list.txt'.format(dataset_config_dir))
+# input_file = open('{0}/test_data_list.txt'.format(dataset_config_dir))
 while 1:
     input_line = input_file.readline()
     if not input_line:
@@ -115,10 +117,13 @@ print(len(testlist))
 class_file = open('{0}/classes.txt'.format(dataset_config_dir))
 class_id = 1
 cld = {}
+class_names = []
 while 1:
     class_input = class_file.readline()
     if not class_input:
         break
+    else:
+        class_names.extend([class_input.rstrip()])
     class_input = class_input[:-1]
 
     input_file = open('{0}/models/{1}/points.xyz'.format(opt.dataset_root, class_input))
@@ -133,20 +138,31 @@ while 1:
     input_file.close()
     cld[class_id] = np.array(cld[class_id])
     class_id += 1
+classes_results_dir = ['experiments/eval_result/ycb/' + class_name for class_name in class_names]
 
 # for now in range(0, 20738):
-for now in range(0, 2949):
+# for now in range(0, 2949):
+results_files={}
+for now in range(0, 20738):
+    video_id = testlist[now].split("/")[1]
+    frame_id = testlist[now].split("/")[2]
+
     img = Image.open('{0}/{1}-color.png'.format(opt.dataset_root, testlist[now]))
     depth = np.array(Image.open('{0}/{1}-depth.png'.format(opt.dataset_root, testlist[now])))
-    posecnn_meta = scio.loadmat('{0}/results_PoseCNN_RSS2018/{1}.mat'.format(ycb_toolbox_dir, '%06d' % now))    
-    # posecnn_meta = scio.loadmat('{0}/results_PoseCNN_testing_full/{1}.mat'.format(ycb_toolbox_dir, '%06d' % now))
+    # posecnn_meta = scio.loadmat('{0}/results_PoseCNN_RSS2018/{1}.mat'.format(ycb_toolbox_dir, '%06d' % now))
+    posecnn_meta = scio.loadmat('{0}/results_PoseCNN_testing_full/{1}.mat'.format(ycb_toolbox_dir, '%06d' % now))
     label = np.array(posecnn_meta['labels'])
     posecnn_rois = np.array(posecnn_meta['rois'])
 
     lst = posecnn_rois[:, 1:2].flatten()
+    # print(lst)
+    # print([class_names[int(id)-1] for id in lst])
+    # print([classes_results_dir[int(id)-1] for id in lst])
+
     my_result_wo_refine = []
     my_result = []
-    
+    result_validity = []
+
     for idx in range(len(lst)):
         itemid = lst[idx]
         try:
@@ -210,7 +226,7 @@ for now in range(0, 2949):
                 my_mat = quaternion_matrix(my_r)
                 R = Variable(torch.from_numpy(my_mat[:3, :3].astype(np.float32))).cuda().view(1, 3, 3)
                 my_mat[0:3, 3] = my_t
-                
+
                 new_cloud = torch.bmm((cloud - T), R).contiguous()
                 pred_r, pred_t = refiner(new_cloud, emb, index)
                 pred_r = pred_r.view(1, 1, -1)
@@ -234,11 +250,42 @@ for now in range(0, 2949):
             # Here 'my_pred' is the final pose estimation result after refinement ('my_r': quaternion, 'my_t': translation)
 
             my_result.append(my_pred.tolist())
+            result_validity.append(True)
         except ValueError:
             print("PoseCNN Detector Lost {0} at No.{1} keyframe".format(itemid, now))
             my_result_wo_refine.append([0.0 for i in range(7)])
             my_result.append([0.0 for i in range(7)])
+            result_validity.append(False)
+
+    for i in range(len(lst)):
+        # Identify class id and compose dictionary key
+        class_id = int(lst[i])-1
+        key = class_names[class_id] + '_' + video_id
+
+        result_string = invalid_result_placeholder
+
+        if result_validity[i] == True:
+            # Convert quaternion to axis angle
+            q = my_result[i][0:4]
+            p = my_result[i][4:7]
+            np_q = np.quaternion(q[0], q[1], q[2], q[3])
+            axis_angle = quaternion.as_rotation_vector(np_q)
+            axis_normalized = unit_vector(axis_angle)
+
+            # Compose output vector as "<x y z> <axis> <angle> <6 null velocity vector> <frame id>"
+            result = [p[0], p[1], p[2], axis_normalized[0], axis_normalized[1], axis_normalized[2], np.linalg.norm(axis_angle)]
+            result_string = '{:s}'.format(' '.join(['{:.7f}'.format(x) for x in result[:7]])) + ' 0.0 0.0 0.0 0.0 0.0 0.0'
+
+        # Write on file
+        try:
+            results_files[key]
+        except KeyError:
+            results_files[key] = open(classes_results_dir[class_id] + '/' + video_id + '/object-tracking_estimate.txt', "w")
+        results_files[key].write(result_string + ' ' + str(int(frame_id)) + '\n')
 
     scio.savemat('{0}/{1}.mat'.format(result_wo_refine_dir, '%04d' % now), {'poses':my_result_wo_refine})
     scio.savemat('{0}/{1}.mat'.format(result_refine_dir, '%04d' % now), {'poses':my_result})
     print("Finish No.{0} keyframe".format(now))
+
+for file_path in results_files:
+    results_files[file_path].close()
