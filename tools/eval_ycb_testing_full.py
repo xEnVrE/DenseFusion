@@ -163,11 +163,7 @@ for now in range(0, 2949):
                 np.random.shuffle(c_mask)
                 choose = choose[c_mask.nonzero()]
             else:
-                if len(choose) != 0:
-                    choose = np.pad(choose, (0, num_points - len(choose)), 'wrap')
-                else:
-                    print ("PoseCNN roi not containing valid mask points")
-                    continue
+                choose = np.pad(choose, (0, num_points - len(choose)), 'wrap')
 
             depth_masked = depth[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
             xmap_masked = xmap[rmin:rmax, cmin:cmax].flatten()[choose][:, np.newaxis].astype(np.float32)
@@ -238,7 +234,7 @@ for now in range(0, 2949):
             # Here 'my_pred' is the final pose estimation result after refinement ('my_r': quaternion, 'my_t': translation)
 
             my_result.append(my_pred.tolist())
-        except ZeroDivisionError:
+        except ValueError:
             print("PoseCNN Detector Lost {0} at No.{1} keyframe".format(itemid, now))
             my_result_wo_refine.append([0.0 for i in range(7)])
             my_result.append([0.0 for i in range(7)])
