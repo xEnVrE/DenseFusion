@@ -4,7 +4,6 @@ import os
 import sys
 import time
 import yarp
-from pyquaternion import Quaternion
 
 sys.path.insert(0, os.getcwd())
 from lib.inference import Inference
@@ -92,18 +91,18 @@ class InferenceModule (yarp.RFModule):
 
             prediction = self.inference.inference(self.options.object_id, rgb_frame, depth_frame, mask_frame)
 
+            if len(prediction) != 0:
+                output_vector = yarp.Vector()
+                output_vector.resize(7)
+                output_vector[0] = prediction[0]
+                output_vector[1] = prediction[1]
+                output_vector[2] = prediction[2]
+                output_vector[3] = prediction[3]
+                output_vector[4] = prediction[4]
+                output_vector[5] = prediction[5]
+                output_vector[6] = prediction[6]
 
-            output_vector = yarp.Vector()
-            output_vector.resize(7)
-            output_vector[0] = prediction[0]
-            output_vector[1] = prediction[1]
-            output_vector[2] = prediction[2]
-            output_vector[3] = prediction[3]
-            output_vector[4] = prediction[4]
-            output_vector[5] = prediction[5]
-            output_vector[6] = prediction[6]
-
-            self.prediction_out.write(output_vector)
+                self.prediction_out.write(output_vector)
             
             print(1.0 / (time.time() - start_time))
 
